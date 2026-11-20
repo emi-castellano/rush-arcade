@@ -1,0 +1,40 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+:root {
+  --ink: #14122b;
+  --panel: #25214a;
+  --panel-2: #2f2a5e;
+  --gold: #ffd23f;
+  --orange: #ff8a3d;
+  --green: #4be37a;
+  --px: 'Press Start 2P', ui-monospace, monospace;
+  --body: 'Pixelify Sans Variable', 'Pixelify Sans', ui-monospace, monospace;
+}
+body {
+  font-family: var(--body);
+  background: var(--ink);
+  color: #fff;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+}
+button {
+  font-family: inherit;
+}
+canvas {
+  image-rendering: pixelated;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
