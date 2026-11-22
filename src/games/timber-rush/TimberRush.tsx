@@ -76,6 +76,9 @@ export default function TimberRush({ onExit }: Props) {
           const danger = Math.max(0, Math.min(1, (14 - engine.time) / 14));
           const rush = engine.rushLeft > 0 ? 0.5 : 0;
           music.setIntensity(0.15 + Math.min(0.25, engine.elapsed / 400) + rush + danger * 0.6);
+          music.setBattle(engine.thiefFight);
+        } else {
+          music.setBattle(false);
         }
         renderer.draw();
         raf = requestAnimationFrame(frame);

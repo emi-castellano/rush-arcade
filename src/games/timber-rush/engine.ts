@@ -3,7 +3,7 @@ import {
   SLOT_Y, START_TIME, TREE_COUNT, TREE_KINDS, UPGRADES, W, WORLD_H, WORLD_W,
   axeCount, carryCap, chopInterval, dmg, drainRate, kindWeights, logPrice, moveSpeed,
   patienceMult, timeMult, xpNeeded, CHOICES, MAX_SKILLS, RUSH_EVERY, RUSH_FIRST, RUSH_LEN, RUSH_PAY, type UpgradeId,
-  critChance, chainDmg, dashCd, DASH_TIME, DASH_MULT, specialChance, BOMB_RADIUS, BOMB_DMG, BEES_SPEED, BEES_LIFE, BEES_COST, THIEF_FIRST,
+  critChance, chainDmg, dashCd, DASH_TIME, DASH_MULT, specialChance, BOMB_RADIUS, BOMB_DMG, BEES_SPEED, BEES_LIFE, BEES_COST, THIEF_FIRST, THIEF_HIT,
 } from './config';
 import { sfx } from './audio';
 import { getBest, setBest } from '../../lib/storage';
@@ -66,16 +66,25 @@ export interface Player {
   carry: number;
   dashT: number;
   dashCd: number;
+  fightCd: number;
+  kx: number; // knockback velocity
+  ky: number;
 }
 
 export interface Thief {
   on: boolean;
   x: number;
   y: number;
-  state: 0 | 1 | 2 | 3; // approaching, stealing, fleeing, stunned
+  state: 0 | 1 | 2 | 3 | 4; // approaching, stealing, fleeing, defeated, fighting
   t: number;
   tick: number;
   loot: number;
+  hp: number;
+  maxHp: number;
+  hitCd: number;
+  stun: number;
+  vx: number;
+  vy: number;
 }
 
 export type ParticleKind = 'chip' | 'leaf' | 'coin' | 'spark' | 'log' | 'dust';
@@ -177,7 +186,7 @@ export class TimberEngine {
   chopping = false;
   alert = { text: '', color: '#ffffff', t: 0 };
   bees = { on: false, x: 0, y: 0, life: 0, hit: 0 };
-  thief: Thief = { on: false, x: 0, y: 0, state: 0, t: 0, tick: 0, loot: 0 };
+  thief: Thief = { on: false, x: 0, y: 0, state: 0, t: 0, tick: 0, loot: 0, hp: 0, maxHp: 1, hitCd: 0, stun: 0, vx: 0, vy: 0 };
   private thiefIn = THIEF_FIRST;
   private chainDepth = 0;
 
@@ -206,7 +215,7 @@ export class TimberEngine {
   }
 
   private newPlayer(): Player {
-    return { x: PLAYER_START.x, y: PLAYER_START.y, vx: 0, vy: 0, face: -1, swing: 0, bob: 0, moving: 0, chopTimer: 0, carry: 0, dashT: 0, dashCd: 0 };
+    return { x: PLAYER_START.x, y: PLAYER_START.y, vx: 0, vy: 0, face: -1, swing: 0, bob: 0, moving: 0, chopTimer: 0, carry: 0, dashT: 0, dashCd: 0, fightCd: 0, kx: 0, ky: 0 };
   }
 
   // ---- external store ------------------------------------------------------
@@ -234,6 +243,12 @@ export class TimberEngine {
       newBest: this.newBest,
       stats: { ...this.stats, survived: Math.floor(this.elapsed) },
     };
+  }
+
+  /** True from the moment the thief appears until he is beaten or escapes — drives the battle music. */
+  get thiefFight() {
+    const s = this.thief.state;
+    return this.thief.on && (s === 0 || s === 1 || s === 4);
   }
 
   get capacity() {
@@ -485,6 +500,7 @@ export class TimberEngine {
     this.updateRush(dt);
     this.updatePlayer(dt);
     this.autoChop(dt);
+    this.fightThief(dt);
     this.updateTrees(dt);
     this.updateDepot(dt);
     this.updateCustomers(dt);
@@ -543,8 +559,11 @@ export class TimberEngine {
     }
     p.vx += (ix * sp - p.vx) * k;
     p.vy += (iy * sp - p.vy) * k;
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
+    p.x += (p.vx + p.kx) * dt;
+    p.y += (p.vy + p.ky) * dt;
+    const kd = Math.exp(-dt * 7);
+    p.kx *= kd;
+    p.ky *= kd;
     this.collide(p);
     const speed = Math.hypot(p.vx, p.vy);
     p.moving = Math.min(1, speed / 120);
@@ -755,7 +774,65 @@ export class TimberEngine {
     th.t = 0;
     th.tick = 0;
     th.loot = 0;
-    this.showAlert('THIEF! PROTECT THE DEPOT!', '#ff6b6b', 3);
+    th.maxHp = th.hp = 12 + 2 * Math.floor(this.elapsed / 25);
+    th.hitCd = 0.8;
+    th.stun = 0;
+    th.vx = th.vy = 0;
+    this.showAlert('THIEF! FIGHT HIM!', '#ff6b6b', 3);
+  }
+
+  private engageThief() {
+    const th = this.thief;
+    if (th.state === 4) return;
+    th.state = 4;
+    th.t = 0;
+    this.text(th.x, th.y - 110, 'FIGHT!', '#ff6b6b', 34);
+    sfx.alert();
+  }
+
+  /** Your axe hits him when he is in reach (same swing rhythm as chopping). */
+  private fightThief(dt: number) {
+    const th = this.thief;
+    const p = this.player;
+    p.fightCd = Math.max(0, p.fightCd - dt);
+    if (!th.on || th.state === 2 || th.state === 3) return;
+    const dx = th.x - p.x, dy = th.y - p.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d > 84 || p.fightCd > 0) return;
+    p.fightCd = chopInterval(this.levels.speed);
+    p.swing = 1;
+    p.face = dx >= 0 ? 1 : -1;
+    const crit = Math.random() < critChance(this.levels.lucky);
+    const n = axeCount(this.levels.extra);
+    const amt = dmg(this.levels.edge) * (1 + 0.6 * (n - 1)) * (crit ? 2 : 1);
+    th.hp -= amt;
+    th.stun = 0.25;
+    th.vx += (dx / d) * 300;
+    th.vy += (dy / d) * 300;
+    this.burstP('spark', th.x, th.y - 40, crit ? 12 : 6, 260, 20, th.y);
+    this.text(th.x, th.y - 85, crit ? 'CRIT!' : `-${amt.toFixed(1)}`, crit ? '#ffe14a' : '#ffffff', crit ? 34 : 26);
+    this.shakeAmt = Math.max(this.shakeAmt, crit ? 5 : 0);
+    this.hitStop = crit ? 0.04 : 0;
+    sfx.chop(crit, false);
+    this.engageThief();
+    if (th.hp <= 0) this.defeatThief();
+  }
+
+  private defeatThief() {
+    const th = this.thief;
+    this.stock += th.loot;
+    this.text(th.x, th.y - 110, th.loot > 0 ? `THIEF DOWN! +${th.loot} logs back` : 'THIEF DOWN!', '#7dff9a', 30);
+    this.text(th.x, th.y - 140, '+6 XP', '#7fd3ff', 26);
+    this.burstP('coin', th.x, th.y - 40, 18, 420, 60, th.y);
+    this.shakeAmt = Math.max(this.shakeAmt, 8);
+    th.loot = 0;
+    th.state = 3;
+    th.t = 0;
+    th.stun = 99;
+    sfx.coin(6);
+    this.gainXp(6);
+    if (this.pendingLevels > 0) this.openLevelUp();
+    else this.emit();
   }
 
   private updateThief(dt: number) {
@@ -768,49 +845,83 @@ export class TimberEngine {
       return;
     }
     th.t += dt;
+    th.hitCd = Math.max(0, th.hitCd - dt);
+    if (th.state !== 3) th.stun = Math.max(0, th.stun - dt);
+    th.x += th.vx * dt;
+    th.y += th.vy * dt;
+    const damp = Math.exp(-dt * 7);
+    th.vx *= damp;
+    th.vy *= damp;
     const p = this.player;
-    if (th.state < 2 && Math.hypot(p.x - th.x, p.y - th.y) < 36) {
-      // caught!
-      this.stock += th.loot;
-      this.text(th.x, th.y - 110, th.loot > 0 ? `CAUGHT! +${th.loot} logs back` : 'CAUGHT!', '#7dff9a', 30);
-      this.text(th.x, th.y - 140, '+4 XP', '#7fd3ff', 26);
-      this.burstP('coin', th.x, th.y - 40, 14, 380, 60, th.y);
-      th.loot = 0;
-      th.state = 3;
-      th.t = 0;
-      sfx.coin(4);
-      this.gainXp(4);
-      if (this.pendingLevels > 0) this.openLevelUp();
-      else this.emit();
-      return;
-    }
+    const dx = p.x - th.x, dy = p.y - th.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const stunned = th.stun > 0;
+
     if (th.state === 0) {
-      const dx = DEPOT.x - th.x, dy = DEPOT.y - th.y;
-      const d = Math.hypot(dx, dy) || 1;
-      th.x += (dx / d) * 150 * dt;
-      th.y += (dy / d) * 150 * dt;
-      if (d < 26) {
-        th.state = 1;
-        th.t = 0;
+      if (dist < 130) this.engageThief();
+      else if (!stunned) {
+        const tx = DEPOT.x - th.x, ty = DEPOT.y - th.y;
+        const d = Math.hypot(tx, ty) || 1;
+        th.x += (tx / d) * 150 * dt;
+        th.y += (ty / d) * 150 * dt;
+        if (d < 26) {
+          th.state = 1;
+          th.t = 0;
+        }
       }
     } else if (th.state === 1) {
       th.tick -= dt;
-      if (th.tick <= 0 && this.stock > 0) {
+      if (th.tick <= 0 && this.stock > 0 && !stunned) {
         th.tick = 0.35;
         this.stock--;
         th.loot++;
         this.flyerTo(DEPOT.x, DEPOT.y - 20, th.x, th.y - 40, 0, false);
         sfx.nope();
       }
-      if (th.t > 9 || th.loot >= 12) {
+      if (dist < 130) this.engageThief();
+      else if (th.t > 9 || th.loot >= 12) {
         th.state = 2;
         th.t = 0;
         this.text(th.x, th.y - 110, 'HE RUNS!', '#ff9a6a', 28);
       }
-    } else if (th.state === 3) {
-      if (th.t > 1.2) {
+    } else if (th.state === 4) {
+      if (dist > 260) {
+        th.state = 0; // you walked away: back to the loot
+        th.t = 0;
+      } else if (!stunned) {
+        if (dist > 32) {
+          th.x += (dx / dist) * 135 * dt;
+          th.y += (dy / dist) * 135 * dt;
+        } else if (th.hitCd <= 0) {
+          // he hits back: costs time, shoves you, and grabs logs from your bag
+          th.hitCd = 1.15;
+          p.kx += (dx / dist) * 420;
+          p.ky += (dy / dist) * 420;
+          th.vx -= (dx / dist) * 160;
+          th.vy -= (dy / dist) * 160;
+          this.time = Math.max(0.5, this.time - THIEF_HIT);
+          const grab = Math.min(2, p.carry);
+          if (grab > 0) {
+            p.carry -= grab;
+            th.loot += grab;
+            this.text(p.x, p.y - 130, `-${grab} logs!`, '#ffb36b', 26);
+          }
+          this.text(p.x, p.y - 100, `-${THIEF_HIT}s`, '#ff6b6b', 30);
+          this.shakeAmt = Math.max(this.shakeAmt, 8);
+          this.flashRed = Math.max(this.flashRed, 0.3);
+          this.burstP('spark', p.x, p.y - 40, 8, 240, 20, p.y);
+          sfx.angry();
+        }
+      }
+      if (th.t > 22) {
         th.state = 2;
         th.t = 0;
+      }
+    } else if (th.state === 3) {
+      if (th.t > 1.3) {
+        th.state = 2;
+        th.t = 0;
+        th.stun = 0;
       }
     } else {
       th.x += 250 * dt;

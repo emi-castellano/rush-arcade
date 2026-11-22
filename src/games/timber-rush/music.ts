@@ -11,6 +11,12 @@ const CHORDS = [
   [41, 45, 48], // F
   [43, 47, 50], // G
 ];
+const BATTLE_CHORDS = [
+  [45, 48, 52], // Am
+  [43, 47, 50], // G
+  [41, 45, 48], // F
+  [40, 44, 47], // E
+];
 const PENTA = [67, 69, 72, 74, 76, 79, 81, 84];
 const ARP = [0, 1, 2, 1, 0, 2, 1, 2];
 /** Music level relative to the SFX master (ambient, so well under the effects). */
@@ -64,8 +70,44 @@ export function createVoices(ctx: BaseAudioContext, dest: AudioNode) {
     o.stop(t + 0.2);
   };
 
+  const snare = (t: number, vol: number) => {
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1900;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+    src.connect(bp).connect(g).connect(dest);
+    src.start(t, Math.random() * 0.3);
+    src.stop(t + 0.16);
+    tone('triangle', 190, t, 0.09, vol * 0.8, 0.002);
+  };
+
+  /** Driving minor-key fight theme: saw pad, 8th-note bass, four-on-the-floor, snare, 16th arp. */
+  const battleStep = (n: number, t: number, stepDur: number) => {
+    const bar = Math.floor(n / 16) % 4;
+    const s = n % 16;
+    const chord = BATTLE_CHORDS[bar];
+    const barDur = stepDur * 16;
+    if (s === 0) {
+      for (const m of chord) {
+        tone('sawtooth', mtof(m + 12), t, barDur * 1.02, 0.026, 0.05, -6);
+        tone('sawtooth', mtof(m + 12), t, barDur * 1.02, 0.026, 0.05, 6);
+      }
+    }
+    if (s % 2 === 0) tone('sawtooth', mtof(chord[0] - 12), t, stepDur * 1.7, 0.12, 0.004);
+    if (s % 4 === 0) kick(t, 0.32);
+    if (s === 4 || s === 12) snare(t, 0.13);
+    if (s % 2 === 1) hat(t, 0.05);
+    tone('square', mtof(chord[s % 3] + (s % 4 === 3 ? 36 : 24)), t, stepDur * 1.2, 0.026, 0.003);
+    if (s === 0 || s === 6 || s === 10) tone('square', mtof(chord[2] + 12), t, stepDur * 2, 0.045, 0.004);
+  };
+
   /** Schedule one 16th-note step. `step` runs 0..63 (four bars). */
-  const step = (n: number, t: number, stepDur: number, intensity: number) => {
+  const step = (n: number, t: number, stepDur: number, intensity: number, battle = false) => {
+    if (battle) return battleStep(n, t, stepDur);
     const bar = Math.floor(n / 16) % 4;
     const s = n % 16;
     const chord = CHORDS[bar];
@@ -118,6 +160,8 @@ class Music {
   private intensity = 0.15;
   private target = 0.15;
   private ducked = false;
+  battle = false;
+  wantBattle = false;
 
   private ensure(): boolean {
     const ctx = sfx.context;
@@ -152,11 +196,13 @@ class Music {
     this.running = true;
     this.stepNo = 0;
     this.intensity = this.target = 0.15;
+    this.battle = this.wantBattle = false;
     this.next = this.ctx!.currentTime + 0.15;
     this.timer = window.setInterval(() => this.tick(), 25);
   }
 
   stop() {
+    this.battle = this.wantBattle = false;
     if (!this.running) return;
     this.running = false;
     window.clearInterval(this.timer);
@@ -175,6 +221,11 @@ class Music {
     this.apply();
   }
 
+  /** Switch to the fight theme (applied on the next bar line so it stays in time). */
+  setBattle(on: boolean) {
+    this.wantBattle = on;
+  }
+
   setIntensity(v: number) {
     this.target = Math.max(0, Math.min(1, v));
   }
@@ -184,9 +235,10 @@ class Music {
     if (!ctx || !this.voices) return;
     let guard = 0;
     while (this.next < ctx.currentTime + 0.2 && guard++ < 16) {
-      const bpm = 88 + this.intensity * 38;
+      if (this.stepNo % 4 === 0) this.battle = this.wantBattle; // switch on the next beat
+      const bpm = this.battle ? 150 : 88 + this.intensity * 38;
       const dur = 60 / bpm / 4;
-      this.voices.step(this.stepNo, this.next, dur, this.intensity);
+      this.voices.step(this.stepNo, this.next, dur, this.intensity, this.battle);
       this.notes++;
       this.next += dur;
       this.stepNo = (this.stepNo + 1) % 64;
@@ -198,15 +250,15 @@ class Music {
 export const music = new Music();
 
 /** Renders a few seconds offline and reports levels — used to verify the mix isn't silent or clipping. */
-export async function renderPreview(seconds = 16, intensity = 0.5) {
+export async function renderPreview(seconds = 16, intensity = 0.5, battle = false) {
   const sr = 22050;
   const ctx = new OfflineAudioContext(1, sr * seconds, sr);
   const bus = ctx.createGain();
   bus.gain.value = MUSIC_GAIN;
   bus.connect(ctx.destination);
   const v = createVoices(ctx, bus);
-  const dur = 60 / (88 + intensity * 38) / 4;
-  for (let i = 0, t = 0; t < seconds - 0.3; i++, t += dur) v.step(i % 64, t, dur, intensity);
+  const dur = 60 / (battle ? 150 : 88 + intensity * 38) / 4;
+  for (let i = 0, t = 0; t < seconds - 0.3; i++, t += dur) v.step(i % 64, t, dur, intensity, battle);
   const buf = await ctx.startRendering();
   const d = buf.getChannelData(0);
   let peak = 0, sum = 0;

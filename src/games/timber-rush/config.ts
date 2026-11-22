@@ -72,6 +72,7 @@ export const BEES_SPEED = 150;
 export const BEES_LIFE = 8;
 export const BEES_COST = 1.3;
 export const THIEF_FIRST = 50;
+export const THIEF_HIT = 1.5; // seconds lost each time he lands a hit
 
 export const UPGRADES: UpgradeDef[] = [
   { id: 'edge', name: 'Sharper Axe', icon: '🪓', max: 14,

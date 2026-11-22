@@ -589,3 +589,96 @@
     height: 56px;
   }
 }
+
+/* ---- compact layout (less screen space for UI) ---- */
+.topbar {
+  padding: 6px 12px;
+}
+.title {
+  font-size: 11px;
+}
+.pill {
+  font-size: 9px;
+  padding: 7px 9px;
+  box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.35), inset 2px 2px 0 rgba(255, 255, 255, 0.18), 0 2px 0 #000;
+}
+.body {
+  gap: 12px;
+  padding: 0 12px 10px;
+}
+@media (min-width: 1101px) {
+  .shop {
+    flex: 0 0 236px;
+  }
+}
+.shop {
+  padding: 8px 8px 8px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+.shopTitle {
+  margin: 0 0 6px;
+  font-size: 10px;
+}
+.wallet {
+  font-size: 10px;
+}
+.xpBox {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  gap: 2px 8px;
+}
+.xpLv {
+  font-size: 10px;
+}
+.xpBar {
+  height: 9px;
+}
+.xpNum {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.shopList {
+  gap: 5px;
+}
+.upgrade {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 4px 8px 4px 8px;
+  box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.35), inset 2px 2px 0 rgba(255, 255, 255, 0.12), 0 2px 0 #000;
+}
+.icon {
+  width: 30px;
+  height: 30px;
+}
+.info {
+  gap: 1px;
+}
+.uname {
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.05;
+}
+.ustat {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.pips {
+  gap: 2px;
+}
+.pips i {
+  width: 5px;
+  height: 5px;
+}
+.cost {
+  font-size: 9px;
+  text-shadow: 1px 1px 0 #000;
+}
+.empty {
+  min-height: 42px;
+  font-size: 8px;
+}
+.panelHint {
+  display: none;
+}

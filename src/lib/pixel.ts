@@ -143,32 +143,73 @@ export function silhouette(src: HTMLCanvasElement, color = '#ffffff'): HTMLCanva
   return c;
 }
 
-// ---- 3x5 digit font (for tiny labels) ---------------------------------------
+// ---- 3x5 pixel font (compact labels) ----------------------------------------
 const TINY: Record<string, string> = {
   '0': '111101101101111', '1': '010110010010111', '2': '111001111100111', '3': '111001111001111',
   '4': '101101111001001', '5': '111100111001111', '6': '111100111101111', '7': '111001001001001',
-  '8': '111101111101111', '9': '111101111001111', '/': '001001010100100', 'x': '000101010101000',
-  '+': '000010111010000', '-': '000000111000000', '$': '011110010011110', '.': '000000000000010',
+  '8': '111101111101111', '9': '111101111001111', '/': '001001010100100', '+': '000010111010000',
+  '-': '000000111000000', '$': '011110010011110', '.': '000000000000010', ',': '000000000010100',
+  '!': '010010010000010', '?': '110001010000010', ':': '000010000010000', '%': '101001010100101',
+  '[': '110100100100110', ']': '011001001001011', '>': '100010001010100', '<': '001010100010001',
+  A: '010101111101101', B: '110101110101110', C: '011100100100011', D: '110101101101110',
+  E: '111100110100111', F: '111100110100100', G: '011100101101011', H: '101101111101101',
+  I: '111010010010111', J: '001001001101010', K: '101101110101101', L: '100100100100111',
+  M: '101111111101101', N: '110101101101101', O: '010101101101010', P: '110101110100100',
+  Q: '010101101011001', R: '110101110101101', S: '011100010001110', T: '111010010010010',
+  U: '101101101101111', V: '101101101101010', W: '101101111111101', X: '101101010101101',
+  Y: '101101010010010', Z: '111001010100111',
 };
 
-export function tiny(g: Ctx, text: string, x: number, y: number, color: string, shadow?: string) {
-  let cx = Math.round(x);
-  for (const ch of text) {
-    const bits = TINY[ch];
-    if (bits) {
+const glyphCache = new Map<string, HTMLCanvasElement>();
+/** 5x7 glyph (3x5 letter + 1px outline) rendered once per char/colour. */
+function glyph(ch: string, color: string, outline: string): HTMLCanvasElement | null {
+  const bits = TINY[ch];
+  if (!bits) return null;
+  const key = `${ch}|${color}|${outline}`;
+  let c = glyphCache.get(key);
+  if (!c) {
+    const [cv, g] = mk(5, 7);
+    if (outline) {
+      g.fillStyle = outline;
       for (let i = 0; i < 15; i++) {
-        if (bits[i] === '1') {
-          if (shadow) { g.fillStyle = shadow; g.fillRect(cx + (i % 3) + 1, Math.round(y) + Math.floor(i / 3) + 1, 1, 1); }
-        }
+        if (bits[i] !== '1') continue;
+        const x = (i % 3) + 1, y = Math.floor(i / 3) + 1;
+        g.fillRect(x - 1, y, 3, 1);
+        g.fillRect(x, y - 1, 1, 3);
       }
-      g.fillStyle = color;
-      for (let i = 0; i < 15; i++) if (bits[i] === '1') g.fillRect(cx + (i % 3), Math.round(y) + Math.floor(i / 3), 1, 1);
     }
+    g.fillStyle = color;
+    for (let i = 0; i < 15; i++) if (bits[i] === '1') g.fillRect((i % 3) + 1, Math.floor(i / 3) + 1, 1, 1);
+    glyphCache.set(key, cv);
+    c = cv;
+  }
+  return c;
+}
+
+export const tinyWidth = (text: string) => text.length * 4 - 1;
+
+/** Compact label: 3x5 font, optional 1px outline. `x` is left/center/right per `align`. */
+export function ttext(
+  g: Ctx, text: string, x: number, y: number, color: string,
+  opts: { align?: 'left' | 'center' | 'right'; outline?: string } = {},
+) {
+  const t = text.toUpperCase();
+  const w = tinyWidth(t);
+  let cx = Math.round(x);
+  if (opts.align === 'center') cx -= Math.floor(w / 2);
+  else if (opts.align === 'right') cx -= w;
+  const out = opts.outline ?? '#14122b';
+  for (const ch of t) {
+    const gl = glyph(ch, color, out);
+    if (gl) g.drawImage(gl, cx - 1, Math.round(y) - 1);
     cx += 4;
   }
 }
 
-export const tinyWidth = (text: string) => text.length * 4 - 1;
+/** Plain (no outline) variant kept for existing call sites. */
+export function tiny(g: Ctx, text: string, x: number, y: number, color: string, shadow?: string) {
+  ttext(g, text, x, y, color, { outline: shadow ?? '' });
+}
 
 // ---- Pixel font text (Press Start 2P, crisp at multiples of 8px) -------------
 export const PX_FONT = '"Press Start 2P", monospace';

@@ -1,7 +1,7 @@
 import {
-  bayer, ditherDisc, mk, pset, ptext, rect, tiny, tinyWidth, tri, type Ctx,
+  bayer, ditherDisc, mk, pset, ptext, rect, tiny, tinyWidth, tri, ttext, type Ctx,
 } from '../../lib/pixel';
-import { BASE, COUNTER, DEPOT, MAX_TIME, WORLD_H, WORLD_W, axeColor, axeCount, dashCd, xpNeeded } from './config';
+import { BASE, COUNTER, DEPOT, MAX_TIME, RUSH_PAY, WORLD_H, WORLD_W, axeColor, axeCount, dashCd, xpNeeded } from './config';
 import type { Customer, TimberEngine, Tree } from './engine';
 import { ART, Art, VH, VW, WH, WW } from './sprites';
 
@@ -309,7 +309,7 @@ export class Renderer {
     const { b, e, art } = this;
     const th = e.thief;
     const x = this.sx(th.x), y = this.sy(th.y);
-    const running = th.state === 0 || th.state === 2;
+    const running = th.state === 0 || th.state === 2 || (th.state === 4 && th.stun <= 0);
     const frame = art.thiefFrames[running ? Math.floor(e.clock * 12) % 4 : 0];
     this.shadow(0, x, y, 0.3);
     const wob = th.state === 1 ? (Math.floor(e.clock * 6) % 2) : 0;
@@ -323,11 +323,17 @@ export class Renderer {
     if (th.loot > 0) {
       const txt = String(th.loot);
       const w = tinyWidth(txt) + 14;
-      rect(b, INK, x - Math.floor(w / 2), y - 36, w, 10);
-      b.drawImage(art.log.c, x - Math.floor(w / 2) + 1, y - 35);
-      tiny(b, txt, x - Math.floor(w / 2) + 12, y - 33, '#ff9a9a');
+      rect(b, INK, x - Math.floor(w / 2), y - 36 - (th.state === 4 ? 8 : 0), w, 10);
+      b.drawImage(art.log.c, x - Math.floor(w / 2) + 1, y - 35 - (th.state === 4 ? 8 : 0));
+      tiny(b, txt, x - Math.floor(w / 2) + 12, y - 33 - (th.state === 4 ? 8 : 0), '#ff9a9a');
     }
-    if (th.state < 2 && Math.floor(e.clock * 4) % 2 === 0) ptext(b, '!', x, y - 48, '#ff4d4d', { align: 'center' });
+    if (th.state === 4 || th.hp < th.maxHp) {
+      const bw = 18;
+      rect(b, INK, x - bw / 2 - 1, y - 42, bw + 2, 5);
+      rect(b, '#5a1a1a', x - bw / 2, y - 41, bw, 3);
+      rect(b, '#ff4d4d', x - bw / 2, y - 41, Math.max(0, Math.round((bw * th.hp) / th.maxHp)), 3);
+    }
+    if (th.state < 2 && Math.floor(e.clock * 4) % 2 === 0) ttext(b, '!', x, y - 50, '#ff4d4d', { align: 'center' });
   }
 
   private bees() {
@@ -381,9 +387,9 @@ export class Renderer {
     rect(b, INK, x + 13, y - 16, 4, 16);
     rect(b, '#7b4e26', x + 14, y - 15, 2, 14);
     // plate
-    rect(b, INK, x - 23, y + 4, 46, 11);
-    rect(b, '#5a3418', x - 22, y + 5, 44, 9);
-    ptext(b, 'DEPOT', x, y + 6, '#ffe2a8', { align: 'center', outline: '#2a160a' });
+    rect(b, INK, x - 15, y + 4, 30, 9);
+    rect(b, '#5a3418', x - 14, y + 5, 28, 7);
+    ttext(b, 'DEPOT', x, y + 6, '#ffe2a8', { align: 'center', outline: '' });
     if (e.stock > 0) {
       const txt = String(e.stock);
       const w = tinyWidth(txt) + 14;
@@ -434,89 +440,96 @@ export class Renderer {
       if (!t.on) continue;
       const k = clamp(t.life / t.max);
       if (k < 0.25 && Math.floor(e.clock * 24) % 2) continue;
-      const big = t.size >= 40;
-      ptext(b, t.text, this.sx(t.x), this.sy(t.y) - (big ? 8 : 4), t.color, { size: big ? 16 : 8, align: 'center' });
+      const x = this.sx(t.x), y = this.sy(t.y);
+      if (t.size >= 34) ptext(b, t.text, x, y - 4, t.color, { align: 'center' });
+      else ttext(b, t.text, x, y - 2, t.color, { align: 'center' });
     }
   }
 
-  // ---- HUD -----------------------------------------------------------------
+  // ---- HUD (compact: 3x5 font, thin bars) ------------------------------------
   private hud() {
     const { b, e, art } = this;
 
-    // money
+    // money + level
     const bounce = e.moneyPulse > 0.5 ? -1 : 0;
-    b.drawImage(art.coin.c, 5, 5 + bounce);
-    ptext(b, Math.floor(e.money).toLocaleString('en-US'), 17, 5 + bounce, e.moneyPulse > 0.2 ? '#fff7a8' : '#ffffff');
-
-    // level + xp
-    ptext(b, `LV ${e.level}`, 5, 18, '#7fd3ff');
-    const xw = 52, xx = 52;
-    rect(b, INK, xx - 1, 19, xw + 2, 8);
-    rect(b, '#2a2744', xx, 20, xw, 6);
-    rect(b, '#4aa0ff', xx, 20, Math.round((xw * e.xp) / xpNeeded(e.level)), 6);
-    rect(b, '#9fd0ff', xx, 20, Math.round((xw * e.xp) / xpNeeded(e.level)), 2);
+    b.drawImage(art.coin.c, 3, 2 + bounce);
+    ttext(b, Math.floor(e.money).toLocaleString('en-US'), 14, 5 + bounce, e.moneyPulse > 0.2 ? '#fff7a8' : '#ffffff');
+    ttext(b, `LV ${e.level}`, 4, 15, '#7fd3ff');
+    const xw = 30, xx = 24;
+    rect(b, INK, xx - 1, 15, xw + 2, 5);
+    rect(b, '#2a2744', xx, 16, xw, 3);
+    rect(b, '#4aa0ff', xx, 16, Math.round((xw * e.xp) / xpNeeded(e.level)), 3);
 
     // time bar
-    const bw = 152, bh = 11, bx = Math.round((VW - bw) / 2), by = 5;
+    const bw = 110, bh = 7, bx = Math.round((VW - bw) / 2), by = 4;
     const frac = clamp(e.time / MAX_TIME);
     const low = e.time < 10 && e.phase === 'playing';
-    rect(b, INK, bx - 2, by - 2, bw + 4, bh + 4);
+    rect(b, INK, bx - 1, by - 1, bw + 2, bh + 2);
     rect(b, '#2a2744', bx, by, bw, bh);
     const fw = Math.max(1, Math.round((bw - 2) * frac));
     const flick = low && Math.floor(e.clock * 8) % 2 === 0;
     const main = frac > 0.4 ? '#2fc95e' : frac > 0.2 ? '#ffa91f' : flick ? '#ff9a9a' : '#ff3b3b';
     const hi = frac > 0.4 ? '#8cf59a' : frac > 0.2 ? '#ffd27a' : '#ffb0b0';
     rect(b, main, bx + 1, by + 1, fw, bh - 2);
-    rect(b, hi, bx + 1, by + 1, fw, 2);
+    rect(b, hi, bx + 1, by + 1, fw, 1);
     for (let i = 1; i < 8; i++) rect(b, 'rgba(0,0,0,0.25)', bx + Math.round((bw / 8) * i), by + 1, 1, bh - 2);
-    ptext(b, e.time.toFixed(1), VW / 2, by + 2, '#ffffff', { align: 'center' });
+    ttext(b, e.time.toFixed(1), VW / 2, by + 1, '#ffffff', { align: 'center' });
 
     // combo
     if (e.combo >= 2) {
       const bump = e.comboPulse > 0.5 ? -1 : 0;
-      ptext(b, `COMBO X${e.combo}  +${Math.min(e.combo - 1, 12) * 10}%`, VW / 2, 21 + bump, '#ffb347', { align: 'center' });
+      ttext(b, `COMBO X${e.combo}  +${Math.min(e.combo - 1, 12) * 10}%`, VW / 2, 15 + bump, '#ffb347', { align: 'center' });
     }
 
-    // rush hour banner / countdown
+    // rush hour
     if (e.rushLeft > 0) {
       const flash = Math.floor(e.clock * 8) % 2 === 0;
-      const w = 126;
-      rect(b, INK, VW / 2 - w / 2 - 2, 33, w + 4, 15);
-      rect(b, flash ? '#ff5a1f' : '#ffb020', VW / 2 - w / 2, 35, w, 11);
-      ptext(b, `RUSH HOUR ${Math.ceil(e.rushLeft)}`, VW / 2, 37, '#ffffff', { align: 'center' });
-      if (e.rushBanner > 0) ptext(b, 'CUSTOMERS PAY X1.5!', VW / 2, 52, '#ffd23f', { align: 'center' });
-    } else if (e.phase === 'playing' && e.rushIn < 5) {
-      if (Math.floor(e.clock * 4) % 2 === 0) ptext(b, 'RUSH HOUR INCOMING', VW / 2, 36, '#ff8a3d', { align: 'center' });
+      const w = 64;
+      rect(b, INK, VW / 2 - w / 2 - 1, 22, w + 2, 9);
+      rect(b, flash ? '#ff5a1f' : '#ffb020', VW / 2 - w / 2, 23, w, 7);
+      ttext(b, `RUSH HOUR ${Math.ceil(e.rushLeft)}`, VW / 2, 24, '#ffffff', { align: 'center', outline: '' });
+      if (e.rushBanner > 0) ttext(b, `CUSTOMERS PAY X${RUSH_PAY}`, VW / 2, 33, '#ffd23f', { align: 'center' });
+    } else if (e.phase === 'playing' && e.rushIn < 5 && Math.floor(e.clock * 4) % 2 === 0) {
+      ttext(b, 'RUSH HOUR INCOMING', VW / 2, 23, '#ff8a3d', { align: 'center' });
     }
 
     // alerts (thief, bees, golden tree)
     if (e.alert.t > 0 && (e.alert.t > 0.5 || Math.floor(e.clock * 10) % 2)) {
-      const w = e.alert.text.length * 8 + 8;
-      rect(b, INK, Math.round(VW / 2 - w / 2), 60, w, 12);
-      ptext(b, e.alert.text, VW / 2, 62, e.alert.color, { align: 'center' });
+      const w = tinyWidth(e.alert.text) + 6;
+      rect(b, INK, Math.round(VW / 2 - w / 2), 41, w, 9);
+      ttext(b, e.alert.text, VW / 2, 43, e.alert.color, { align: 'center', outline: '' });
+    }
+
+    // thief health (while fighting)
+    if (e.thief.on && e.thief.state === 4) {
+      const bw2 = 50;
+      ttext(b, 'THIEF', VW / 2, 53, '#ff9a9a', { align: 'center' });
+      rect(b, INK, VW / 2 - bw2 / 2 - 1, 59, bw2 + 2, 5);
+      rect(b, '#5a1a1a', VW / 2 - bw2 / 2, 60, bw2, 3);
+      rect(b, '#ff4d4d', VW / 2 - bw2 / 2, 60, Math.max(0, Math.round((bw2 * e.thief.hp) / e.thief.maxHp)), 3);
     }
 
     // dash cooldown
     if (e.levels.dash > 0) {
       const ready = e.player.dashCd <= 0;
-      const frac = 1 - e.player.dashCd / dashCd(e.levels.dash);
-      ptext(b, ready ? 'DASH: SPACE' : 'DASH', VW - 6, VH - 22, ready ? (Math.floor(e.clock * 4) % 2 ? '#7dff9a' : '#ffffff') : '#8a86b8', { align: 'right' });
-      rect(b, INK, VW - 58, VH - 12, 52, 7);
-      rect(b, '#2a2744', VW - 57, VH - 11, 50, 5);
-      rect(b, ready ? '#4be37a' : '#6f6ad0', VW - 57, VH - 11, Math.round(50 * frac), 5);
+      const frac2 = 1 - e.player.dashCd / dashCd(e.levels.dash);
+      ttext(b, ready ? 'DASH [SPACE]' : 'DASH', VW - 5, VH - 13, ready ? (Math.floor(e.clock * 4) % 2 ? '#7dff9a' : '#ffffff') : '#8a86b8', { align: 'right' });
+      rect(b, INK, VW - 41, VH - 7, 36, 4);
+      rect(b, '#2a2744', VW - 40, VH - 6, 34, 2);
+      rect(b, ready ? '#4be37a' : '#6f6ad0', VW - 40, VH - 6, Math.round(34 * frac2), 2);
     }
 
     // backpack + depot
     const full = e.player.carry >= e.capacity;
-    b.drawImage(art.log.c, VW - 74, 6);
-    ptext(b, `${e.player.carry}/${e.capacity}`, VW - 62, 5, full && Math.floor(e.clock * 8) % 2 ? '#ff6b6b' : '#ffffff');
-    if (e.stock > 0) ptext(b, `DEPOT ${e.stock}`, VW - 6, 17, '#ffe2a8', { align: 'right' });
+    b.drawImage(art.log.c, VW - 46, 3);
+    ttext(b, `${e.player.carry}/${e.capacity}`, VW - 35, 5, full && Math.floor(e.clock * 8) % 2 ? '#ff6b6b' : '#ffffff');
+    if (e.stock > 0) ttext(b, `DEPOT ${e.stock}`, VW - 4, 14, '#ffe2a8', { align: 'right' });
 
     // hints
     if (e.phase === 'playing' && e.elapsed < 12 && (e.elapsed < 9 || Math.floor(e.elapsed * 6) % 2 === 0)) {
-      ptext(b, 'WASD / ARROWS: MOVE', VW / 2, 138, '#ffffff', { align: 'center' });
-      ptext(b, 'NEAR A TREE: AUTO CHOP', VW / 2, 149, '#ffffff', { align: 'center' });
-      ptext(b, 'DROP LOGS AT THE DEPOT', VW / 2, 160, '#ffd23f', { align: 'center' });
+      ttext(b, 'WASD / ARROWS: MOVE', VW / 2, 150, '#ffffff', { align: 'center' });
+      ttext(b, 'NEAR A TREE: AUTO CHOP', VW / 2, 158, '#ffffff', { align: 'center' });
+      ttext(b, 'DROP LOGS AT THE DEPOT', VW / 2, 166, '#ffd23f', { align: 'center' });
     }
 
     this.minimap();
@@ -525,19 +538,18 @@ export class Renderer {
 
   private minimap() {
     const { b, e } = this;
-    const mw = 56, mh = Math.round((mw * WH) / WW);
-    const mx = 6, my = VH - mh - 6;
+    const mw = 44, mh = Math.round((mw * WH) / WW);
+    const mx = 4, my = VH - mh - 4;
     const sx = mw / WORLD_W, sy = mh / WORLD_H;
-    rect(b, INK, mx - 2, my - 2, mw + 4, mh + 4);
+    rect(b, INK, mx - 1, my - 1, mw + 2, mh + 2);
     rect(b, '#2f7d36', mx, my, mw, mh);
     for (const t of e.trees) {
       const x = mx + Math.round(t.x * sx), y = my + Math.round(t.y * sy);
       if (t.state === 'alive' && t.special) rect(b, t.special === 1 ? '#ffd23f' : t.special === 2 ? '#ff9a2b' : '#ff3b3b', x - 1, y - 1, 3, 3);
-      else if (t.state === 'alive') rect(b, t.kind === 2 ? '#0f3b24' : '#1d6b3a', x, y, t.kind === 2 ? 2 : 1, t.kind === 2 ? 2 : 1);
+      else if (t.state === 'alive') pset(b, t.kind === 2 ? '#0f3b24' : '#1d6b3a', x, y);
       else pset(b, '#c88a4a', x, y);
     }
     rect(b, '#ffb347', mx + Math.round(BASE.x * sx) - 1, my + Math.round(BASE.y * sy) - 1, 3, 3);
-    // view rectangle
     b.fillStyle = 'rgba(255,255,255,0.7)';
     const vx = mx + Math.round(((this.camX * ART) * sx)), vy = my + Math.round(((this.camY * ART) * sy));
     const vw = Math.round(VW * ART * sx), vh = Math.round(VH * ART * sy);
@@ -552,25 +564,22 @@ export class Renderer {
   private depotArrow() {
     const { b, e } = this;
     const dxw = DEPOT.x / ART - this.camX, dyw = DEPOT.y / ART - this.camY;
-    if (dxw > 12 && dxw < VW - 12 && dyw > 68 && dyw < VH - 12) return;
+    if (dxw > 10 && dxw < VW - 10 && dyw > 22 && dyw < VH - 10) return;
     const cx = VW / 2, cy = VH / 2;
     const dx = dxw - cx, dy = dyw - cy;
-    const room = dy < 0 ? cy - 70 : cy - 16;
-    const k = Math.min((cx - 16) / Math.abs(dx || 1e-6), room / Math.abs(dy || 1e-6));
+    const room = dy < 0 ? cy - 26 : cy - 14;
+    const k = Math.min((cx - 14) / Math.abs(dx || 1e-6), room / Math.abs(dy || 1e-6));
     const ax = Math.round(cx + dx * k), ay = Math.round(cy + dy * k);
     const hot = e.player.carry > 0;
     const ang = Math.atan2(dy, dx);
-    const pulse = hot && Math.floor(e.clock * 6) % 2 ? 1 : 0;
-    ditherDisc(b, INK, ax, ay, 8 + pulse);
-    ditherDisc(b, INK, ax, ay, 7);
+    const R = hot && Math.floor(e.clock * 6) % 2 ? 6 : 5;
     b.fillStyle = INK;
-    for (let yy = -7; yy <= 7; yy++) { const hw = Math.floor(Math.sqrt(49 - yy * yy)); b.fillRect(ax - hw, ay + yy, hw * 2 + 1, 1); }
+    for (let yy = -R - 1; yy <= R + 1; yy++) { const hw = Math.floor(Math.sqrt((R + 1) * (R + 1) - yy * yy)); b.fillRect(ax - hw, ay + yy, hw * 2 + 1, 1); }
     b.fillStyle = hot ? '#ffd23f' : '#d8d8e8';
-    for (let yy = -6; yy <= 6; yy++) { const hw = Math.floor(Math.sqrt(36 - yy * yy)); b.fillRect(ax - hw, ay + yy, hw * 2 + 1, 1); }
+    for (let yy = -R; yy <= R; yy++) { const hw = Math.floor(Math.sqrt(R * R - yy * yy)); b.fillRect(ax - hw, ay + yy, hw * 2 + 1, 1); }
     const c = Math.cos(ang), s = Math.sin(ang);
-    tri(b, INK, ax + c * 5, ay + s * 5, ax - c * 3 - s * 4, ay - s * 3 + c * 4, ax - c * 3 + s * 4, ay - s * 3 - c * 4);
+    tri(b, INK, ax + c * 4, ay + s * 4, ax - c * 2 - s * 3, ay - s * 2 + c * 3, ax - c * 2 + s * 3, ay - s * 2 - c * 3);
     const meters = String(Math.round(Math.hypot(DEPOT.x - e.player.x, DEPOT.y - e.player.y) / 10));
-    rect(b, INK, ax - Math.floor(tinyWidth(meters) / 2) - 1, ay + 9, tinyWidth(meters) + 2, 7);
-    tiny(b, meters, ax - Math.floor(tinyWidth(meters) / 2), ay + 10, '#ffffff');
+    ttext(b, meters, ax, ay + 8, '#ffffff', { align: 'center' });
   }
 }
