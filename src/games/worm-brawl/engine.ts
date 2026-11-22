@@ -1,6 +1,6 @@
 import {
-  GRAVITY, INF, MAX_HP, RETREAT_TIME, TURN_TIME, VH, VW, WALK_SPEED, WATER_Y, WEAPONS, WEAPON_BY_ID, WORM_NAMES,
-  type Difficulty, type WeaponId,
+  GRAVITY, INF, MAX_HP, RETREAT_TIME, THEMES, TURN_TIME, VH, VW, WALK_SPEED, WATER_Y, WEAPONS, WEAPON_BY_ID, WORM_CY, WORM_H,
+  WORM_NAMES, type Difficulty, type Theme, type WeaponId,
 } from './config';
 import { Terrain } from './terrain';
 import { wsfx } from './audio';
@@ -56,7 +56,7 @@ export interface Blast { x: number; y: number; r: number; t: number; max: number
 export interface Tracer { x0: number; y0: number; x1: number; y1: number; t: number }
 export interface Popup { x: number; y: number; t: number; text: string; color: string }
 
-export interface Settings { difficulty: Difficulty; perTeam: number; aiVsAi: boolean }
+export interface Settings { difficulty: Difficulty; perTeam: number; aiVsAi: boolean; map: Theme | 'random' }
 
 export interface Snapshot {
   phase: Phase;
@@ -67,6 +67,7 @@ export interface Snapshot {
   turnTeam: 0 | 1;
   winner: -1 | 0 | 1 | 2;
   settings: Settings;
+  theme: Theme;
   wins: number;
   paused: boolean;
 }
@@ -92,8 +93,9 @@ export class WormEngine {
   phase: Phase = 'ready';
   paused = false;
   clock = 0;
-  settings: Settings = { difficulty: 'normal', perTeam: 3, aiVsAi: false };
-  terrain: Terrain = new Terrain(7);
+  settings: Settings = { difficulty: 'normal', perTeam: 3, aiVsAi: false, map: 'random' };
+  theme: Theme = 'meadow';
+  terrain: Terrain = new Terrain(7, 'meadow');
   worms: Worm[] = [];
   projs: Proj[] = [];
   particles: Particle[] = [];
@@ -157,6 +159,7 @@ export class WormEngine {
       turnTeam: this.turnTeam,
       winner: this.winner,
       settings: { ...this.settings },
+      theme: this.theme,
       wins: this.wins,
       paused: this.paused,
     };
@@ -174,7 +177,8 @@ export class WormEngine {
     wsfx.init();
     if (s) this.settings = { ...this.settings, ...s };
     wsfx.stopLoops();
-    this.terrain = new Terrain(Math.floor(Math.random() * 1e6) + 1);
+    this.theme = this.settings.map === 'random' ? THEMES[Math.floor(Math.random() * THEMES.length)] : this.settings.map;
+    this.terrain = new Terrain(Math.floor(Math.random() * 1e6) + 1, this.theme);
     this.worms = [];
     this.projs = [];
     this.blasts = [];
@@ -211,6 +215,7 @@ export class WormEngine {
       if (best >= 0) chosen.push(best);
     }
     chosen.sort((a, b) => a - b);
+    for (const x of chosen) this.terrain.makePad(x);
     const flip = Math.random() < 0.5 ? 1 : 0;
     const used: [number, number] = [0, 0];
     chosen.forEach((x, i) => {
@@ -344,7 +349,7 @@ export class WormEngine {
       return;
     }
     // otherwise: aim toward the click
-    const dx = x - w.x, dy = w.y - 3 - y;
+    const dx = x - w.x, dy = w.y - WORM_CY - y;
     if (Math.abs(dx) > 2) w.face = dx >= 0 ? 1 : -1;
     w.aim = clamp((Math.atan2(dy, Math.abs(dx)) * 180) / Math.PI, -85, 85);
   }
@@ -431,7 +436,7 @@ export class WormEngine {
   private muzzle(w: Worm) {
     const a = (w.aim * Math.PI) / 180;
     const dx = w.face * Math.cos(a), dy = -Math.sin(a);
-    return { dx, dy, x: w.x + dx * 6, y: w.y - 3 + dy * 6 };
+    return { dx, dy, x: w.x + dx * 6, y: w.y - WORM_CY + dy * 6 };
   }
 
   private spend(id: WeaponId) {
@@ -496,7 +501,7 @@ export class WormEngine {
         break;
       }
       case 'dynamite': {
-        const p = this.newProj('dynamite', w.x + w.face * 3, w.y - 4, w.face * 18, -30, 5);
+        const p = this.newProj('dynamite', w.x + w.face * 3, w.y - 5, w.face * 18, -30, 5);
         this.projs.push(p);
         wsfx.dynamite();
         wsfx.fuseOn();
@@ -552,7 +557,7 @@ export class WormEngine {
   private shootRay(w: Worm, spread: number, dmg: number, range: number, crater: number, rapid = false) {
     const a = ((w.aim + spread) * Math.PI) / 180;
     const dx = w.face * Math.cos(a), dy = -Math.sin(a);
-    const sx = w.x + dx * 5, sy = w.y - 3 + dy * 5;
+    const sx = w.x + dx * 5, sy = w.y - WORM_CY + dy * 5;
     if (rapid) wsfx.uzi();
     else wsfx.shotgun();
     this.shake = Math.max(this.shake, rapid ? 0.6 : 2);
@@ -587,7 +592,7 @@ export class WormEngine {
   private wormAt(x: number, y: number, except?: Worm): Worm | null {
     for (const o of this.worms) {
       if (!o.alive || o.gone || o === except) continue;
-      if (Math.abs(x - o.x) <= 3 && y >= o.y - 6 && y <= o.y + 1) return o;
+      if (Math.abs(x - o.x) <= 3 && y >= o.y - WORM_H - 1 && y <= o.y + 1) return o;
     }
     return null;
   }
@@ -618,10 +623,10 @@ export class WormEngine {
       return void wsfx.nope();
     }
     this.spend('teleport');
-    this.fx('star', w.x, w.y - 3, 14, 60, 0.6);
+    this.fx('star', w.x, w.y - WORM_CY, 14, 60, 0.6);
     w.x = rx; w.y = ry; w.vx = w.vy = 0; w.grounded = false; w.fallV = 0;
     this.rope.state = 'none';
-    this.fx('star', w.x, w.y - 3, 14, 60, 0.6);
+    this.fx('star', w.x, w.y - WORM_CY, 14, 60, 0.6);
     wsfx.teleport();
     this.emit();
   }
@@ -629,7 +634,7 @@ export class WormEngine {
   // ---- worm physics ---------------------------------------------------------
   blocked(x: number, y: number): boolean {
     const T = this.terrain;
-    for (let yy = y - 5; yy <= y; yy++) for (let xx = x - 2; xx <= x + 2; xx++) if (T.isSolid(xx, yy)) return true;
+    for (let yy = y - (WORM_H - 1); yy <= y; yy++) for (let xx = x - 2; xx <= x + 2; xx++) if (T.isSolid(xx, yy)) return true;
     return false;
   }
   onGround(x: number, y: number): boolean {
@@ -689,7 +694,7 @@ export class WormEngine {
     const roped = isCur && this.rope.state === 'attached';
     const jetting = isCur && this.jet.active;
     // free a worm that got wedged into terrain
-    for (let i = 0; i < 6 && this.blocked(Math.round(w.x), Math.round(w.y)); i++) w.y -= 1;
+    for (let i = 0; i < 9 && this.blocked(Math.round(w.x), Math.round(w.y)); i++) w.y -= 1;
     const rx = Math.round(w.x), ry = Math.round(w.y);
     if (this.onGround(rx, ry) && !roped && !jetting && w.vy >= -1) {
       if (!w.grounded) this.landed(w);
@@ -729,7 +734,7 @@ export class WormEngine {
     if (w.alive) {
       w.alive = false;
       w.hp = 0;
-      this.text(w.x, WATER_Y - 6, `${w.name} SWAM!`, '#9fd0ff');
+      this.text(w.x, WATER_Y - 6, `${w.name} ${this.theme === 'volcano' ? 'MELTED' : 'SWAM'}!`, '#9fd0ff');
     }
     this.fx('splash', w.x, WATER_Y, 22, 90, 0.9);
     wsfx.splash();
@@ -748,8 +753,8 @@ export class WormEngine {
   private killWorm(w: Worm) {
     w.alive = false;
     w.hp = 0;
-    this.fx('smoke', w.x, w.y - 3, 10, 40, 0.8);
-    this.fx('spark', w.x, w.y - 3, 8, 70, 0.4);
+    this.fx('smoke', w.x, w.y - WORM_CY, 10, 40, 0.8);
+    this.fx('spark', w.x, w.y - WORM_CY, 8, 70, 0.4);
     wsfx.die();
     this.text(w.x, w.y - 18, `${w.name} DIED`, '#ff8a8a');
     if (w === this.cw && this.phase === 'turn') {
@@ -767,7 +772,7 @@ export class WormEngine {
 
   private ropeConstrain(w: Worm) {
     const r = this.rope;
-    const cx = w.x, cy = w.y - 3;
+    const cx = w.x, cy = w.y - WORM_CY;
     const dx = cx - r.hx, dy = cy - r.hy;
     const d = Math.hypot(dx, dy) || 1;
     if (d > r.len) {
@@ -820,7 +825,7 @@ export class WormEngine {
       r.travel += (Math.hypot(r.vx, r.vy) * dt) / steps;
       if (this.terrain.isSolid(Math.round(r.hx), Math.round(r.hy))) {
         r.state = 'attached';
-        r.len = Math.max(8, Math.hypot(w.x - r.hx, w.y - 3 - r.hy));
+        r.len = Math.max(8, Math.hypot(w.x - r.hx, w.y - WORM_CY - r.hy));
         wsfx.ropeHit();
         return;
       }
@@ -839,8 +844,8 @@ export class WormEngine {
     const dx = w.face * Math.cos(a), dy = -Math.sin(a);
     const sp = 24;
     // dig ahead of the worm, then follow into the tunnel
-    this.terrain.tunnel(w.x + dx * 5, w.y - 3 + dy * 5, 3);
-    this.terrain.tunnel(w.x + dx * 2, w.y - 3 + dy * 2, 3);
+    this.terrain.tunnel(w.x + dx * 5, w.y - WORM_CY + dy * 5, 4);
+    this.terrain.tunnel(w.x + dx * 2, w.y - WORM_CY + dy * 2, 4);
     w.x += dx * sp * dt;
     w.y += dy * sp * dt;
     w.grounded = false;
@@ -849,7 +854,7 @@ export class WormEngine {
     this.drill.sound += dt;
     if (this.drill.sound > 0.05) {
       this.drill.sound = 0;
-      this.fx('dirt', w.x + dx * 6, w.y - 3 + dy * 6, 2, 60, 0.4);
+      this.fx('dirt', w.x + dx * 6, w.y - WORM_CY + dy * 6, 2, 60, 0.4);
       wsfx.drillSet(90 + Math.random() * 30);
     }
     if (this.drill.t <= 0) this.stopDrill();
@@ -898,7 +903,7 @@ export class WormEngine {
     for (const o of this.worms) {
       if (!o.alive || o.gone) continue;
       if (o.id === p.owner && p.age < 0.25) continue;
-      if (Math.abs(p.x - o.x) <= 4 && p.y >= o.y - 7 && p.y <= o.y + 1) return o;
+      if (Math.abs(p.x - o.x) <= 4 && p.y >= o.y - WORM_H - 2 && p.y <= o.y + 1) return o;
     }
     return null;
   }
@@ -1065,7 +1070,7 @@ export class WormEngine {
     this.fx('spark', x, y, 8, 120, 0.5);
     for (const w of this.worms) {
       if (!w.alive || w.gone) continue;
-      const cx = w.x, cy = w.y - 3;
+      const cx = w.x, cy = w.y - WORM_CY;
       const d = Math.hypot(cx - x, cy - y);
       if (d > r + 6) continue;
       const k = 1 - d / (r + 6);

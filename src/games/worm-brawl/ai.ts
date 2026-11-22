@@ -1,5 +1,5 @@
 import type { Worm, WormEngine } from './engine';
-import { DIFFICULTY, VW, type WeaponId } from './config';
+import { DIFFICULTY, VW, WORM_CY, type WeaponId } from './config';
 
 type Stage = 'idle' | 'think' | 'move' | 'aim' | 'charge' | 'retreat';
 
@@ -200,7 +200,7 @@ export class WormAI {
   private makePlan(e: WormEngine, w: Worm): Plan {
     const d = DIFFICULTY[e.settings.difficulty];
     const enemies = e.enemies;
-    const mx = w.x, my = w.y - 3;
+    const mx = w.x, my = w.y - WORM_CY;
     const cands: Plan[] = [];
     if (enemies.length === 0) return { weapon: 'bazooka', face: w.face, aim: 30, power: 0.5, score: 0 };
     const near = [...enemies].sort((a, b) => dist(a.x, a.y, mx, my) - dist(b.x, b.y, mx, my));
@@ -208,7 +208,7 @@ export class WormAI {
 
     // 1) hitscan weapons at clear targets
     for (const t of near.slice(0, 3)) {
-      const tx = t.x, ty = t.y - 3;
+      const tx = t.x, ty = t.y - WORM_CY;
       const dx = tx - mx, dy = ty - my;
       const dd = Math.hypot(dx, dy);
       const face: 1 | -1 = dx >= 0 ? 1 : -1;
@@ -256,7 +256,7 @@ export class WormAI {
             if (r.hit === 'water' || r.hit === 'out') continue;
             if (dist(r.x, r.y, mx, my) < sim.selfSafe) continue;
             for (const t of near.slice(0, 3)) {
-              const err = dist(r.x, r.y, t.x, t.y - 3);
+              const err = dist(r.x, r.y, t.x, t.y - WORM_CY);
               if (err > 40) continue;
               const prev = bestFor.get(sim.weapon);
               const score = sim.base - err * sim.k + (r.hit === 'worm' ? 4 : 0);

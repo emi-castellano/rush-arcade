@@ -1,7 +1,7 @@
 import { bayer, disc, line, mk, ptext, rect, pset, ttext, tinyWidth, type Ctx } from '../../lib/pixel';
-import { TEAM_COLORS, TEAM_NAMES, VH, VW, WATER_Y, WEAPON_BY_ID } from './config';
+import { TEAM_COLORS, TEAM_NAMES, VH, VW, WATER_Y, WEAPON_BY_ID, WORM_CY, type Theme } from './config';
 import type { Particle, Proj, Worm, WormEngine } from './engine';
-import { Art, type WormFrameName } from './sprites';
+import { Art, WATER, type WormFrameName } from './sprites';
 import { Terrain } from './terrain';
 
 const INK = '#241226';
@@ -38,8 +38,9 @@ export class Renderer {
     }
     b.setTransform(1, 0, 0, 1, 0, 0);
     b.globalAlpha = 1;
-    b.drawImage(art.bg, 0, 0);
-    art.clouds.forEach((c, i) => {
+    const theme = e.theme;
+    b.drawImage(art.bg(theme), 0, 0);
+    art.clouds(theme).forEach((c, i) => {
       const x = ((e.clock * (2.5 + i * 1.3) + i * 150) % (VW + 90)) - 45;
       b.globalAlpha = 0.9;
       b.drawImage(c.c, Math.round(x - c.ax), 22 + i * 24 - c.ay + Math.round(Math.sin(e.clock * 0.3 + i) * 2));
@@ -49,6 +50,7 @@ export class Renderer {
     b.setTransform(1, 0, 0, 1, ox, oy);
     e.terrain.upload();
     b.drawImage(e.terrain.canvas, 0, 0);
+    this.decor();
     this.entities();
     this.water();
     b.setTransform(1, 0, 0, 1, 0, 0);
@@ -80,6 +82,17 @@ export class Renderer {
     for (const p of e.popups) ttext(b, p.text, Math.round(p.x), Math.round(p.y), p.color, { align: 'center' });
   }
 
+  private decor() {
+    const { b, e, art } = this;
+    const set = art.decor(e.theme);
+    for (const d of e.terrain.decor) {
+      // vanish when the ground under them is blown away
+      if (!e.terrain.isSolid(d.x, d.y) || e.terrain.isSolid(d.x, d.y - 1)) continue;
+      const s = set[d.kind % set.length];
+      b.drawImage(s.c, d.x - s.ax, d.y - s.ay + 1);
+    }
+  }
+
   private grave(w: Worm) {
     const s = this.art.grave;
     this.b.drawImage(s.c, Math.round(w.x) - s.ax, Math.round(w.y) - s.ay);
@@ -89,11 +102,12 @@ export class Renderer {
     const { b, e, art } = this;
     const x = Math.round(w.x), y = Math.round(w.y);
     const isCur = w === e.cw && e.phase === 'turn';
-    let name: WormFrameName = Math.floor(e.clock * 2 + w.id) % 2 ? 'idle1' : 'idle0';
+    let name: WormFrameName = Math.floor(e.clock * 1.6 + w.id) % 2 ? 'idle1' : 'idle0';
+    if (w.grounded && (e.clock * 0.9 + w.id * 1.7) % 3.3 > 3.15) name = 'blink';
     if (w.hurtT > 0.2) name = 'hurt';
     else if (!w.grounded) name = 'air';
     else if (w.walking) name = (['walk0', 'walk1', 'walk2'] as const)[Math.floor(w.walkT * 9) % 3];
-    const fr = art.frames.team[w.team][name];
+    const fr = art.frames[w.team][name];
 
     if (isCur) this.held(w, true);
     b.save();
@@ -112,11 +126,11 @@ export class Renderer {
     const col = TEAM_COLORS[w.team];
     const hp = String(Math.ceil(w.shown));
     const tw = tinyWidth(hp) + 4;
-    rect(b, INK, x - Math.floor(tw / 2), y - 21, tw, 7);
-    ttext(b, hp, x, y - 20, col, { align: 'center', outline: '' });
+    rect(b, INK, x - Math.floor(tw / 2), y - 24, tw, 7);
+    ttext(b, hp, x, y - 23, col, { align: 'center', outline: '' });
     if (isCur) {
       const bob = Math.round(Math.sin(e.clock * 6) * 1.5);
-      const ay = y - 29 + bob;
+      const ay = y - 33 + bob;
       rect(b, INK, x - 3, ay, 7, 3);
       rect(b, col, x - 2, ay, 5, 2);
       rect(b, INK, x - 2, ay + 3, 5, 2);
@@ -129,14 +143,14 @@ export class Renderer {
     const { b, e } = this;
     const a = (w.aim * Math.PI) / 180;
     const dx = w.face * Math.cos(a), dy = -Math.sin(a);
-    const cx = w.x + w.face * 1, cy = w.y - 4;
+    const cx = w.x + w.face * 1, cy = w.y - WORM_CY;
     const wp = e.weapon;
     if (wp === 'jetpack') {
       if (!behind) return;
       const bx = Math.round(w.x - w.face * 5);
-      rect(b, INK, bx - 1, Math.round(w.y) - 9, 4, 8);
-      rect(b, '#8a90a2', bx, Math.round(w.y) - 8, 2, 6);
-      rect(b, '#d94a3d', bx, Math.round(w.y) - 6, 2, 1);
+      rect(b, INK, bx - 1, Math.round(w.y) - 11, 4, 8);
+      rect(b, '#8a90a2', bx, Math.round(w.y) - 10, 2, 6);
+      rect(b, '#d94a3d', bx, Math.round(w.y) - 8, 2, 1);
       return;
     }
     if (behind) return;
@@ -227,7 +241,7 @@ export class Renderer {
     if ((e.fired && def.attack) || e.rope.state === 'attached' || e.jet.active || e.drill.t > 0) return;
     const a = (w.aim * Math.PI) / 180;
     const dx = w.face * Math.cos(a), dy = -Math.sin(a);
-    const cx = w.x, cy = w.y - 4;
+    const cx = w.x, cy = w.y - WORM_CY;
     for (const d of [12, 18]) pset(b, 'rgba(255,255,255,0.6)', cx + dx * d, cy + dy * d);
     const px = Math.round(cx + dx * 26), py = Math.round(cy + dy * 26);
     const pulse = Math.floor(e.clock * 6) % 2;
@@ -253,7 +267,7 @@ export class Renderer {
     const r = e.rope;
     const w = e.cw;
     if (r.state === 'none' || !w) return;
-    line(b, '#e6d3a0', w.x, w.y - 3, r.hx, r.hy, 1);
+    line(b, '#e6d3a0', w.x, w.y - WORM_CY, r.hx, r.hy, 1);
     rect(b, INK, Math.round(r.hx) - 1, Math.round(r.hy) - 1, 3, 3);
     pset(b, '#cfd4de', Math.round(r.hx), Math.round(r.hy));
   }
@@ -338,18 +352,23 @@ export class Renderer {
 
   private water() {
     const { b, e } = this;
+    const pal = WATER[e.theme];
     for (let x = 0; x < VW; x++) {
       const wave = Math.round(Math.sin(x * 0.12 + e.clock * 2.2) * 1.2 + Math.sin(x * 0.05 - e.clock * 1.3) * 0.8);
       const y = WATER_Y + wave;
-      b.globalAlpha = 0.72;
-      b.fillStyle = '#2a67d8';
+      b.globalAlpha = pal.lava ? 0.9 : 0.72;
+      b.fillStyle = pal.a;
       b.fillRect(x, y, 1, VH - y);
       b.globalAlpha = 0.5;
-      b.fillStyle = '#1b3f9a';
+      b.fillStyle = pal.b;
       b.fillRect(x, y + 4, 1, VH - y - 4);
       b.globalAlpha = 1;
-      b.fillStyle = (x + Math.floor(e.clock * 4)) % 9 < 3 ? '#e0f4ff' : '#8fd0ff';
+      b.fillStyle = (x + Math.floor(e.clock * 4)) % 9 < 3 ? pal.foam : pal.top;
       b.fillRect(x, y, 1, 1);
+      if (pal.lava && (x * 7 + Math.floor(e.clock * 3)) % 23 === 0) {
+        b.fillStyle = '#fff0a0';
+        b.fillRect(x, y + 3, 2, 1);
+      }
     }
   }
 
@@ -416,13 +435,16 @@ export class Renderer {
 /** Mini battle scene for the hub card. */
 export function drawCardArt(canvas: HTMLCanvasElement) {
   const art = new Art();
-  const t = new Terrain(11);
+  const theme: Theme = 'meadow';
+  const t = new Terrain(11, theme);
   t.upload();
   const [full, g] = mk(VW, VH);
-  g.drawImage(art.bg, 0, 0);
+  g.drawImage(art.bg(theme), 0, 0);
   g.drawImage(t.canvas, 0, 0);
+  const set = art.decor(theme);
+  for (const d of t.decor) if (d.x > 90 && d.x < 300) g.drawImage(set[d.kind % set.length].c, d.x - set[d.kind % set.length].ax, d.y - set[d.kind % set.length].ay + 1);
   const place = (x: number, team: 0 | 1, face: 1 | -1) => {
-    const fr = art.frames.team[team].idle0.s;
+    const fr = art.frames[team].idle0.s;
     const y = t.height[x] - 1;
     g.save();
     g.translate(x, y);
@@ -433,7 +455,6 @@ export function drawCardArt(canvas: HTMLCanvasElement) {
   place(150, 0, 1);
   place(236, 1, -1);
   place(268, 1, -1);
-  // rocket with smoke trail + explosion
   for (let i = 0; i < 8; i++) {
     g.globalAlpha = 1 - i / 9;
     rect(g, '#bfc3d4', 164 + i * 3, 108 - i * 2 + Math.round(Math.sin(i)), 2, 2);

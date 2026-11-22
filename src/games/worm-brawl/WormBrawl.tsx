@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { DIFFICULTY, TEAM_NAMES, VH, VW, WEAPONS, INF, type Difficulty, type WeaponId } from './config';
+import { DIFFICULTY, TEAM_NAMES, THEMES, THEME_LABEL, VH, VW, WEAPONS, INF, type Difficulty, type Theme, type WeaponId } from './config';
 import { WormEngine } from './engine';
 import { Renderer } from './render';
 import { drawWeaponIcon } from './icons';
@@ -29,6 +29,7 @@ export default function WormBrawl({ onExit }: Props) {
   const [muted, setMuted] = useState(wsfx.muted);
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [perTeam, setPerTeam] = useState(3);
+  const [map, setMap] = useState<Theme | 'random'>('random');
 
   // render loop (fixed-step simulation, integer-scaled pixel canvas)
   useEffect(() => {
@@ -98,7 +99,7 @@ export default function WormBrawl({ onExit }: Props) {
       if (GAME_KEYS.includes(e.code)) e.preventDefault();
       if (e.code === 'Enter' && (engine.phase === 'ready' || engine.phase === 'over')) {
         e.preventDefault();
-        engine.start({ difficulty, perTeam });
+        engine.start({ difficulty, perTeam, map });
         return;
       }
       if (e.repeat) return;
@@ -114,7 +115,7 @@ export default function WormBrawl({ onExit }: Props) {
       window.removeEventListener('keyup', onUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, [engine, difficulty, perTeam]);
+  }, [engine, difficulty, perTeam, map]);
 
   const toArt = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -136,7 +137,7 @@ export default function WormBrawl({ onExit }: Props) {
     setMuted(!muted);
   };
 
-  const start = () => engine.start({ difficulty, perTeam });
+  const start = () => engine.start({ difficulty, perTeam, map });
   const youWon = snap.winner === 0;
 
   return (
@@ -190,6 +191,14 @@ export default function WormBrawl({ onExit }: Props) {
                       {[2, 3, 4].map((n) => (
                         <button key={n} className={`${styles.opt} ${perTeam === n ? styles.optOn : ''}`} onClick={() => setPerTeam(n)}>
                           {n}
+                        </button>
+                      ))}
+                    </div>
+                    <div>
+                      <span>MAP</span>
+                      {(['random', ...THEMES] as const).map((m) => (
+                        <button key={m} className={`${styles.opt} ${map === m ? styles.optOn : ''}`} onClick={() => setMap(m)}>
+                          {m === 'random' ? 'RANDOM' : THEME_LABEL[m]}
                         </button>
                       ))}
                     </div>

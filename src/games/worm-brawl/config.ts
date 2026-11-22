@@ -8,6 +8,13 @@ export const RETREAT_TIME = 4;
 export const GRAVITY = 260;
 export const WALK_SPEED = 34;
 export const MAX_HP = 100;
+/** Worm collision body: 5 wide, WORM_H tall, standing on its feet row. WORM_CY = height of its centre of mass. */
+export const WORM_H = 8;
+export const WORM_CY = 5;
+
+export type Theme = 'meadow' | 'desert' | 'frost' | 'volcano';
+export const THEMES: Theme[] = ['meadow', 'desert', 'frost', 'volcano'];
+export const THEME_LABEL: Record<Theme, string> = { meadow: 'MEADOW', desert: 'DESERT', frost: 'FROST', volcano: 'VOLCANO' };
 
 export const TEAM_COLORS = ['#4aa0ff', '#ff5d5d'] as const;
 export const TEAM_NAMES = ['YOU', 'ENEMY'] as const;
