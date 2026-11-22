@@ -7,7 +7,9 @@ export interface GameEntry {
   tags: string[];
   status: 'live' | 'soon';
   accent: [string, string];
-  art: 'timber' | 'mystery';
+  art: 'timber' | 'worms' | 'mystery';
+  /** Formats the saved best value for the card badge (default: BEST n). */
+  bestLabel?: (n: number) => string;
   component?: LazyExoticComponent<ComponentType<{ onExit: () => void }>>;
 }
 
@@ -21,16 +23,19 @@ export const GAMES: GameEntry[] = [
     status: 'live',
     accent: ['#3ddc84', '#ffb020'],
     art: 'timber',
+    bestLabel: (n) => `BEST $${n.toLocaleString()}`,
     component: lazy(() => import('./timber-rush/TimberRush')),
   },
   {
-    id: 'coming-1',
-    title: 'Next game',
-    tagline: 'Something addictive is cooking…',
-    tags: ['Soon'],
-    status: 'soon',
-    accent: ['#7c5cff', '#ff5ca8'],
-    art: 'mystery',
+    id: 'worm-brawl',
+    title: 'Worm Brawl',
+    tagline: 'Turn-based worm warfare. Blast the map. Beat the AI.',
+    tags: ['Strategy', 'Turn-based', 'vs AI'],
+    status: 'live',
+    accent: ['#ff8a5c', '#7c5cff'],
+    art: 'worms',
+    bestLabel: (n) => `WINS ${n}`,
+    component: lazy(() => import('./worm-brawl/WormBrawl')),
   },
   {
     id: 'coming-2',

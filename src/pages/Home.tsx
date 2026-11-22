@@ -51,6 +51,21 @@ function TimberArt() {
   return <canvas ref={ref} className={styles.art} aria-hidden />;
 }
 
+function WormArt() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let dead = false;
+    void (async () => {
+      const { drawCardArt } = await import('../games/worm-brawl/render');
+      if (!dead && ref.current) drawCardArt(ref.current);
+    })();
+    return () => {
+      dead = true;
+    };
+  }, []);
+  return <canvas ref={ref} className={styles.art} aria-hidden />;
+}
+
 function Card({ game }: { game: GameEntry }) {
   const best = useSyncExternalStore(subscribe, () => (game.status === 'live' ? getBest(game.id) : 0));
   const live = game.status === 'live';
@@ -58,9 +73,9 @@ function Card({ game }: { game: GameEntry }) {
   const body = (
     <>
       <div className={styles.cardArt}>
-        {game.art === 'timber' ? <TimberArt /> : <div className={styles.mystery}>?</div>}
+        {game.art === 'timber' ? <TimberArt /> : game.art === 'worms' ? <WormArt /> : <div className={styles.mystery}>?</div>}
         {!live && <span className={styles.badge}>SOON</span>}
-        {live && best > 0 && <span className={styles.badge}>BEST ${best.toLocaleString()}</span>}
+        {live && best > 0 && <span className={styles.badge}>{game.bestLabel ? game.bestLabel(best) : `BEST ${best}`}</span>}
       </div>
       <div className={styles.cardBody}>
         <h3>{game.title}</h3>
